@@ -103,7 +103,7 @@ angular.module("sticky-states-util", [])
                     var index = compArr.indexOf(compObj);
                     if(index > -1) {
                         arr.splice(index, 1);
-                        compArr.splice(index, 1);
+                        specificProperty && compArr.splice(index, 1);
                     }
                 };
             },
@@ -133,6 +133,7 @@ angular.module("sticky-states-util", [])
                 };
             },
 
+            //used to drive an API to exit specific sticky states programmatically, not used for normal transitioning
             calculateExitSticky: function(treeChanges, transition) {
                 //process the inactive states that are going to exit due to $stickyState.reset()
                 var exitSticky = transition.options().exitSticky || []; //initialize exitSticky, if needed
@@ -209,7 +210,6 @@ angular.module("sticky-states-util", [])
                     treeChanges.to = treeChanges.retained.concat(treeChanges.reactivating).concat(treeChanges.entering);
                 }
 
-
                 //determine which inactive states should be exited
 
                 //tail(treeChanges.to) is the last entry in the to-path. This means it is the final destination of the transition.
@@ -242,9 +242,9 @@ angular.module("sticky-states-util", [])
                 treeChanges.exiting = orphans.concat(treeChanges.exiting);
 
                 transition.onSuccess({}, function() {
-                    treeChanges.exiting.forEach(SERVICE.removeFrom(StickyStatesData.inactives, "state"));
-                    treeChanges.entering.forEach(SERVICE.removeFrom(StickyStatesData.inactives, "state"));
-                    treeChanges.reactivating.forEach(SERVICE.removeFrom(StickyStatesData.inactives, "state"));
+                    treeChanges.exiting.forEach(SERVICE.removeFrom(StickyStatesData.inactives));
+                    treeChanges.entering.forEach(SERVICE.removeFrom(StickyStatesData.inactives));
+                    treeChanges.reactivating.forEach(SERVICE.removeFrom(StickyStatesData.inactives));
                     treeChanges.inactivating.forEach(SERVICE.pushTo(StickyStatesData.inactives));
 
                     if(StickyStatesData.inactiveEvent) {
@@ -263,7 +263,19 @@ angular.module("sticky-states-util", [])
                 exitSticky.filter(SERVICE.notInArray(treeChanges.exiting)).forEach(SERVICE.pushTo(treeChanges.exiting));
                 exitSticky.filter(function(node) {
                     return SERVICE.inArray(treeChanges.inactivating, node);
-                }).forEach(SERVICE.removeFrom(treeChanges.inactivating, "state"));
+                }).forEach(SERVICE.removeFrom(treeChanges.inactivating));
+
+                //if inactivating the same state as entering, but with different params, we should exit
+                for(var i=treeChanges.inactivating.length - 1; i >= 0; i--) {
+                    for(var j=treeChanges.entering.length - 1; j >= 0; j--) {
+                        var pathNodeI = treeChanges.inactivating[i];
+                        var pathNodeE = treeChanges.entering[j];
+                        if(pathNodeI && pathNodeE && pathNodeI.state && pathNodeE.state && pathNodeE.state===pathNodeI.state && pathNodeE !== pathNodeI) {
+                            treeChanges.exiting.push(pathNodeI);
+                            treeChanges.inactivating.splice(i, 1);
+                        }
+                    }
+                }
 
                 return treeChanges;
             }

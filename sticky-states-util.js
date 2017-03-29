@@ -68,7 +68,7 @@ angular.module("sticky-states-util", [])
 
             isDescendantOf: function(ancestor) {
                 return function(pathNode) {
-                    return SERVICE.ancestorPath(pathNode.state).indexOf(ancestor) !== -1;
+                    return SERVICE.ancestorPath(pathNode.state).indexOf(ancestor.state || ancestor) !== -1;
                 };
             },
 
@@ -101,8 +101,10 @@ angular.module("sticky-states-util", [])
                 return function(obj) {
                     var compObj = specificProperty ? obj[specificProperty] : obj;
                     var index = compArr.indexOf(compObj);
-                    index > -1 && arr.splice(index, 1);
-                    return arr;
+                    if(index > -1) {
+                        arr.splice(index, 1);
+                        compArr.splice(index, 1);
+                    }
                 };
             },
 
@@ -182,7 +184,7 @@ angular.module("sticky-states-util", [])
 
                 //simulate tree changes from inactiveFromPath to targetState
                 //this will expose all param changes, indicating to us what we really need to exit
-                var simulatedTreeChanges = origCreate.apply($delegate, [inactiveFromPath, targetState]);
+                var simulatedTreeChanges = origCreate.apply($delegate, [inactiveFromPath, targetState]).treeChanges();
 
                 //if there are any retained or entering or exiting nodes in the simulation, we need to rewrite paths
                 var shouldRewritePaths = ["retained", "entering", "exiting"].some(function(path) { return !!simulatedTreeChanges[path].length; });
@@ -212,11 +214,14 @@ angular.module("sticky-states-util", [])
 
                 //tail(treeChanges.to) is the last entry in the to-path. This means it is the final destination of the transition.
                 //childrenOfToState is therefore any inactive states that are children of the final destination state
-                var childrenOfToState = StickyStatesData.inactives.filter(SERVICE.isChildOf(SERVICE.tail(treeChanges.to)));
+                //exclude children that are sticky
+                var childrenOfToState = StickyStatesData.inactives
+                    .filter(SERVICE.isChildOf(SERVICE.tail(treeChanges.to)))
+                    .filter(function(node) { return !node.state.sticky; });
 
                 //get inactive children of any state in the transition to-path.
                 //exclude children that are in the to-path itself
-                //exclude children that are not sticky
+                //exclude children that are sticky
                 var childrenOfToPath = StickyStatesData.inactives.filter(SERVICE.isChildOfAny(treeChanges.to))
                     .filter(SERVICE.notInArray(treeChanges.to))
                     .filter(function(node) { return !node.state.sticky; });

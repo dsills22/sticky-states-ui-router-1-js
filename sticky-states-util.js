@@ -134,6 +134,10 @@ angular.module("sticky-states-util", [])
                 };
             },
 
+            findDynamic: function(param) { return param.dynamic; },
+
+            findNodeByStateName: function(compNode) { return function(node) { return node && node.state && node.state.name===(compNode && compNode.state && compNode.state.name); }; },
+
             //used to drive an API to exit specific sticky states programmatically, not used for normal transitioning
             calculateExitSticky: function(treeChanges, transition) {
                 //process the inactive states that are going to exit due to $stickyState.reset()
@@ -194,18 +198,29 @@ angular.module("sticky-states-util", [])
                 if(shouldRewritePaths) {
                     //the retained nodes from the simulated transition will be reactivated.
                     //(excluding the nodes that are in the original retained path)
-                    //eg, if 10 simulated retained and 3 original retained, then set reactivating to entries 4 to 10
+                    //eg, if 10 simulated retained (0, 1,...,9) and 3 original retained (0, 1, 2), then set reactivating to indexes 3 to 9 (0-based index)
                     //thus: simulated retained must be a superset of original retained
-                    treeChanges.reactivating = simulatedTreeChanges.retained.slice(treeChanges.retained.length);
+                    treeChanges.reactivating = [];
+                    for(var i= treeChanges.retained.length, len = simulatedTreeChanges.retained.length; i<len; i++) {
+                        var simRetNode = simulatedTreeChanges.retained[i]; //candidate simulated retained node to add to reactivating list
+                        if(simRetNode) { //ensure the node is defined
+                            if(simRetNode.paramSchema.filter(SERVICE.findDynamic).length) { //if the node has dynamic params, we need special handling!
+                                var simToNodeArr = simulatedTreeChanges.to.filter(SERVICE.findNodeByStateName(simRetNode)); //get the simulated TO node for the same simRetNode state
+                                if(simToNodeArr.length) { //if to TO node exists...
+                                    treeChanges.reactivating.push(simToNodeArr[0]); //use it instead of the simulated retained node (this means we keep new parameters)
+                                }
+                            } else {
+                                treeChanges.reactivating.push(simRetNode); //else continue as usual
+                            }
+                        }
+                    }
 
-                    var oldEntering = treeChanges.entering;
-                    oldEntering.map(function() {
-                        treeChanges.to.pop(); //entering are last elements in "to" list, remove these from the old to list
+                    treeChanges.entering.map(function() {
+                        treeChanges.to.pop(); //entering are last elements in "to"-list, remove these from the old "to"-list
                     });
 
                     //entering nodes are the same as the simulation's entering
-                    var newEntering = simulatedTreeChanges.entering;
-                    treeChanges.entering = newEntering;
+                    treeChanges.entering = simulatedTreeChanges.entering;
 
                     //the simulation's exiting nodes are inactives that are being exited because:
                     // * the inactive state params changed
@@ -215,7 +230,7 @@ angular.module("sticky-states-util", [])
 
                     //rewrite the to path
                     //NOTE: commented out bc it breaks dynamic states: treeChanges.to = treeChanges.retained.concat(treeChanges.reactivating).concat(treeChanges.entering);
-                    treeChanges.reactivating.concat(newEntering).forEach(function(pathNode) {
+                    treeChanges.reactivating.concat(treeChanges.entering).forEach(function(pathNode) {
                         treeChanges.to.push(pathNode); //add, in this order, the reactivated elements, then the new entering elements to the list
                     });
                 }
@@ -254,7 +269,7 @@ angular.module("sticky-states-util", [])
                 transition.onSuccess({}, function() {
                     treeChanges.exiting.forEach(SERVICE.removeFrom(StickyStatesData.inactives));
                     treeChanges.entering.forEach(SERVICE.removeFrom(StickyStatesData.inactives));
-                    treeChanges.reactivating.forEach(SERVICE.removeFrom(StickyStatesData.inactives));
+                    treeChanges.reactivating.forEach(SERVICE.removeFrom(StickyStatesData.inactives, "state")); //required since we mix simulated TO and simulated RETAINED into reactivating
                     treeChanges.inactivating.forEach(SERVICE.pushTo(StickyStatesData.inactives));
 
                     if(StickyStatesData.inactiveEvent) {

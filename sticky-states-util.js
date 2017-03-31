@@ -1,3 +1,4 @@
+
 angular.module("sticky-states-util", [])
 
 .constant("StickyStatesData", {
@@ -197,8 +198,14 @@ angular.module("sticky-states-util", [])
                     //thus: simulated retained must be a superset of original retained
                     treeChanges.reactivating = simulatedTreeChanges.retained.slice(treeChanges.retained.length);
 
+                    var oldEntering = treeChanges.entering;
+                    oldEntering.map(function() {
+                        treeChanges.to.pop(); //entering are last elements in "to" list, remove these from the old to list
+                    });
+
                     //entering nodes are the same as the simulation's entering
-                    treeChanges.entering = simulatedTreeChanges.entering;
+                    var newEntering = simulatedTreeChanges.entering;
+                    treeChanges.entering = newEntering;
 
                     //the simulation's exiting nodes are inactives that are being exited because:
                     // * the inactive state params changed
@@ -207,7 +214,10 @@ angular.module("sticky-states-util", [])
                     treeChanges.exiting = treeChanges.exiting.concat(simulatedTreeChanges.exiting);
 
                     //rewrite the to path
-                    treeChanges.to = treeChanges.retained.concat(treeChanges.reactivating).concat(treeChanges.entering);
+                    //NOTE: commented out bc it breaks dynamic states: treeChanges.to = treeChanges.retained.concat(treeChanges.reactivating).concat(treeChanges.entering);
+                    treeChanges.reactivating.concat(newEntering).forEach(function(pathNode) {
+                        treeChanges.to.push(pathNode); //add, in this order, the reactivated elements, then the new entering elements to the list
+                    });
                 }
 
                 //determine which inactive states should be exited
@@ -270,9 +280,9 @@ angular.module("sticky-states-util", [])
                     for(var j=treeChanges.entering.length - 1; j >= 0; j--) {
                         var pathNodeI = treeChanges.inactivating[i];
                         var pathNodeE = treeChanges.entering[j];
-                        if(pathNodeI && pathNodeE && pathNodeI.state && pathNodeE.state && pathNodeE.state===pathNodeI.state && pathNodeE !== pathNodeI) {
-                            treeChanges.exiting.push(pathNodeI);
-                            treeChanges.inactivating.splice(i, 1);
+                        if(pathNodeI && pathNodeE && pathNodeI.state && pathNodeE.state && pathNodeE.state===pathNodeI.state && pathNodeE !== pathNodeI) { //state is same but nodes differ
+                            treeChanges.exiting.push(pathNodeI); //exit the inactive state to prevent entered state from being inactive
+                            treeChanges.inactivating.splice(i, 1); //remove state from inactive list
                         }
                     }
                 }

@@ -140,7 +140,9 @@ angular.module("sticky-states-util", [])
 
             //used to drive an API to exit specific sticky states programmatically, not used for normal transitioning
             calculateExitSticky: function(treeChanges, transition) {
-                //process the inactive states that are going to exit due to $stickyState.reset()
+                //commented out: not used and not exactly sure how to populate exitSticky initially. Also seems overcomplicated --- if you want to
+                //exit some inactive state, then just pass in the state list to exit, filter it down to inactives, and return those as exiting...
+                /*//process the inactive states that are going to exit due to $stickyState.reset()
                 var exitSticky = transition.options().exitSticky || []; //initialize exitSticky, if needed
                 if (!SERVICE.isArray(exitSticky)) { //force exitSticky to array
                     exitSticky = [exitSticky];
@@ -167,7 +169,17 @@ angular.module("sticky-states-util", [])
 
                 var inToPathMsg = function(node) { return "Can not exit a sticky state that is currently active/activating: " + node.state.name; }; //assert error msg
                 exiting.map(SERVICE.assertMap(function(node) { return !SERVICE.inArray(treeChanges.to, node); }, inToPathMsg)); //throw errors if any exiting node is not in treeChanges.to
-                return exiting;
+                return exiting;*/
+
+
+                //allow caller (ie, "go" or "transitionTo" to specify a param flag to reset all inactive states
+                //caller may also specify reload: true in their options to ensure the target is also reloaded
+                if(transition.targetState().params() && transition.targetState().params().resetAll) {
+                    //return all inactive states (meaning, all inactive states will be exited)
+                    return StickyStatesData.inactives; //transition.router.stateRegistry.states;
+                } else {
+                    return [];
+                }
             },
 
             calculateStickyTreeChanges: function(transition, $delegate, origCreate) {
@@ -190,7 +202,24 @@ angular.module("sticky-states-util", [])
 
                 //simulate tree changes from inactiveFromPath to targetState
                 //this will expose all param changes, indicating to us what we really need to exit
-                var simulatedTreeChanges = origCreate.apply($delegate, [inactiveFromPath, targetState]).treeChanges();
+                var simulatedTransition = origCreate.apply($delegate, [inactiveFromPath, targetState]);
+                var simulatedTreeChanges = simulatedTransition.treeChanges();
+
+                //this is the original transition delegate, and we run under its context to get simulatedTreeChanges,
+                //meaning the transition we return is missing its on* events and the simulated transition has them
+                //on enter of the delegate, we add any on* events back to the transition we were passed
+                //(and whose tree changes we return)
+                $delegate.onEnter({}, function() { //must use delegate onEnter bc it is too late after running the sim trans
+                    ["onSuccess","onBefore","onEnter","onRetain","onStart","onFinish","onExit","onError"].forEach(function(hookEvent) {
+                        var hooks = simulatedTransition.getHooks(hookEvent); //simulated transition has the original hooks
+                        hooks && hooks.length && hooks.forEach(function(hook) {
+                            if(hook && !hook._deregistered && hook.callback) {
+                                //add hook to transition
+                                transition[hookEvent](hook.matchCriteria, hook.callback, {priority: hook.priority, bind: hook.bind});
+                            }
+                        });
+                    });
+                });
 
                 //if there are any retained or entering or exiting nodes in the simulation, we need to rewrite paths
                 var shouldRewritePaths = ["retained", "entering", "exiting"].some(function(path) { return !!simulatedTreeChanges[path].length; });

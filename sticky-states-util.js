@@ -39,7 +39,7 @@ angular.module("sticky-states-util", [])
             },
 
             tail: function(arr) {
-                return arr.length && arr[arr.length - 1] || undefined;
+                return (arr.length && arr[arr.length - 1]) || undefined;
             },
 
             isTrue: function(elem) { return !!elem; },
@@ -57,7 +57,7 @@ angular.module("sticky-states-util", [])
 
             isChildOfAny: function(parents) {
                 return function(pathNode) {
-                    parents.map(function(parent) {
+                    return parents.map(function(parent) {
                         return SERVICE.isChildOf(parent)(pathNode);
                     }).some(SERVICE.isTrue);
                 };
@@ -268,25 +268,36 @@ angular.module("sticky-states-util", [])
 
                 //tail(treeChanges.to) is the last entry in the to-path. This means it is the final destination of the transition.
                 //childrenOfToState is therefore any inactive states that are children of the final destination state
-                //exclude children that are sticky
                 var childrenOfToState = StickyStatesData.inactives
-                    .filter(SERVICE.isChildOf(SERVICE.tail(treeChanges.to)))
-                    .filter(function(node) { return !node.state.sticky; });
+                    .filter(SERVICE.isChildOf(SERVICE.tail(treeChanges.to)));
 
                 //get inactive children of any state in the transition to-path.
-                //exclude children that are in the to-path itself
-                //exclude children that are sticky
-                var childrenOfToPath = StickyStatesData.inactives.filter(SERVICE.isChildOfAny(treeChanges.to))
+                //exclude children that are in the to-path itself and sticky children
+                var childrenOfToPath = StickyStatesData.inactives
+                    .filter(SERVICE.isChildOfAny(treeChanges.to))
                     .filter(SERVICE.notInArray(treeChanges.to))
                     .filter(function(node) { return !node.state.sticky; });
 
+                //but what if a sticky child is inactive and the current state is an active sibling
+                //then the active sibling is reloaded with different params and this the active sibling is reloaded
+                //then the inactive sticky sibling of the current one is not exited bc it is sticky! Worse, it is
+                //removed from the inactive list and thus we have two states present at once
+                //Instead, we use entering. If there are inactive states that are children of states being entered (ie, freshly loaded, NOT retained)
+                //then we should exit these states even if they are sticky...
+                var childrenOfEnteringPath = StickyStatesData.inactives
+                    .filter(SERVICE.isChildOfAny(treeChanges.entering));
+
                 //exitingChildren are the children above, excluding any already in the exiting set
-                var exitingChildren = childrenOfToState.concat(childrenOfToPath).filter(SERVICE.notInArray(treeChanges.exiting));
+                var exitingChildren = childrenOfToState
+                    .concat(childrenOfToPath, childrenOfEnteringPath)
+                    .filter(SERVICE.notInArray(treeChanges.exiting));
+
                 //get list of all exiting
                 var exitingRoots = treeChanges.exiting.concat(exitingChildren);
 
                 //any inactive descendant of an exiting state will be exited
-                var orphans = StickyStatesData.inactives.filter(SERVICE.isDescendantOfAny(exitingRoots)) //inactives with exiting ancestor
+                var orphans = StickyStatesData.inactives
+                    .filter(SERVICE.isDescendantOfAny(exitingRoots)) //inactives with exiting ancestor
                     .filter(SERVICE.notInArray(exitingRoots)) //not already in exiting list
                     .concat(exitingChildren) //concat with exiting children
                     .reduce(SERVICE.uniqR, []) //form unique array
